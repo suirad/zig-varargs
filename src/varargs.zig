@@ -4,7 +4,10 @@ const std = @import("std");
 const assert = std.debug.assert;
 const print = std.debug.print;
 
-const VA_Errors = error{CountUninitialized};
+const VA_Errors = error{
+    CountUninitialized,
+    NoMoreArgs,
+};
 
 const VA_List = if (builtin.cpu.arch == .x86_64)
     VA_List_x64
@@ -23,7 +26,7 @@ const VA_List_x64 = struct {
 
     const Self = @This();
 
-    /// This needs to be done at the beginning of the function
+    /// This needs to be done first thing by the function that uses it
     pub inline fn init() Self {
         // Get all gen purpose registers one at a time because initializing
         //   any var(even set as undefined) would cause register mutation.
@@ -99,16 +102,16 @@ const VA_List_x64 = struct {
 
         // Debug stuff
         //print("\n", .{});
-        for (self.gp_regs) |i, r| {
-            //print("GReg {}: {}\n", .{ r, i });
+        for (self.gp_regs) |r, i| {
+            //print("GReg {}: {}\n", .{ i, r });
         }
         for (self.fp_regs) |i, r| {
-            //print("FReg {}: {}\n", .{ r, i });
+            //print("FReg {}: {}\n", .{ i, r });
         }
         return self;
     }
 
-    pub fn next(self: *Self, comptime T: type) !T {
+    pub fn next(self: *Self, comptime T: type) VA_Errors!T {
         // Getting the first argument is always successful per spec
         // Any further args need a proper count
         if (self.first_arg) {
@@ -192,13 +195,22 @@ comptime {
 
 fn intTest() callconv(.C) usize {
     var valist = VA_List.init();
-    const count = valist.next(u64) catch unreachable;
+    const count = valist.next(u64) catch unreachable; // first arg is guaranteed
+    if (count > 99) {
+        for (valist.gp_regs) |r, i| {
+            print("\n", .{});
+            print("GReg {}: {}\n", .{ i, r });
+        }
+        @panic("Count is messed up, Registers are probably scrambled. F");
+    }
+
     valist.count = count;
 
     var ret: usize = 0;
 
     while (valist.next(u64)) |num| {
         ret += num;
+        //print("ret is: {}\n", .{ret});
     } else |e| {
         switch (e) {
             error.NoMoreArgs => {},
