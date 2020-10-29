@@ -11,7 +11,6 @@ const VA_Errors = error{
 pub const VAList = struct {
     first_arg: bool = true,
     count: ?usize = null,
-    fpcount: usize = 0,
     gp_offset: u8 = 0,
     fp_offset: u8 = 0,
     gp_regs: [6]u64 = undefined,
@@ -25,7 +24,7 @@ pub const VAList = struct {
         // Get all gen purpose registers one at a time because initializing
         //   any var(even set as undefined) would cause register mutation.
         // You can see this by adding any var above these and seeing rdi+ changing
-        const fpcount = asm volatile (""
+        const fp_count: usize = asm volatile (""
             : [ret] "={rax}" (-> usize)
         );
         const rdi = asm volatile (""
@@ -47,39 +46,40 @@ pub const VAList = struct {
             : [ret] "={r9}" (-> usize)
         );
 
-        var self = Self{};
-        self.fpcount = fpcount;
+        var self = VAList{};
         self.gp_regs[0] = rdi;
         self.gp_regs[1] = rsi;
         self.gp_regs[2] = rdx;
         self.gp_regs[3] = rcx;
         self.gp_regs[4] = r8;
         self.gp_regs[5] = r9;
-        // save fp registers
-        self.fp_regs[0] = asm volatile (""
-            : [ret] "={xmm0}" (-> f64)
-        );
-        self.fp_regs[1] = asm volatile (""
-            : [ret] "={xmm1}" (-> f64)
-        );
-        self.fp_regs[2] = asm volatile (""
-            : [ret] "={xmm2}" (-> f64)
-        );
-        self.fp_regs[3] = asm volatile (""
-            : [ret] "={xmm3}" (-> f64)
-        );
-        self.fp_regs[4] = asm volatile (""
-            : [ret] "={xmm4}" (-> f64)
-        );
-        self.fp_regs[5] = asm volatile (""
-            : [ret] "={xmm5}" (-> f64)
-        );
-        self.fp_regs[6] = asm volatile (""
-            : [ret] "={xmm6}" (-> f64)
-        );
-        self.fp_regs[7] = asm volatile (""
-            : [ret] "={xmm7}" (-> f64)
-        );
+        // save fp registers if fp_count != 0
+        if (fp_count != 0) {
+            self.fp_regs[0] = asm volatile (""
+                : [ret] "={xmm0}" (-> f64)
+            );
+            self.fp_regs[1] = asm volatile (""
+                : [ret] "={xmm1}" (-> f64)
+            );
+            self.fp_regs[2] = asm volatile (""
+                : [ret] "={xmm2}" (-> f64)
+            );
+            self.fp_regs[3] = asm volatile (""
+                : [ret] "={xmm3}" (-> f64)
+            );
+            self.fp_regs[4] = asm volatile (""
+                : [ret] "={xmm4}" (-> f64)
+            );
+            self.fp_regs[5] = asm volatile (""
+                : [ret] "={xmm5}" (-> f64)
+            );
+            self.fp_regs[6] = asm volatile (""
+                : [ret] "={xmm6}" (-> f64)
+            );
+            self.fp_regs[7] = asm volatile (""
+                : [ret] "={xmm7}" (-> f64)
+            );
+        }
 
         // ----find stack area of overflow args
         // use ret addr as an aligned reference point
@@ -99,12 +99,12 @@ pub const VAList = struct {
         // Debug stuff
         //print("\n", .{});
         //print("fpcount: {}\n", .{fpcount});
-        for (self.gp_regs) |r, i| {
-            //print("GReg {}: {}\n", .{ i, r });
-        }
-        for (self.fp_regs) |r, i| {
-            //print("FReg {}: {}\n", .{ i, r });
-        }
+        //for (self.gp_regs) |r, i| {
+        //print("GReg {}: {}\n", .{ i, r });
+        //}
+        //for (self.fp_regs) |r, i| {
+        //print("FReg {}: {}\n", .{ i, r });
+        //}
         return self;
     }
 
@@ -263,7 +263,7 @@ pub fn callVarArgs(comptime T: type, func: *const fn () callconv(.C) void, args:
 
             .Float => {
                 fpcount += 1;
-                const arg = @as(f64, varg);
+                const arg = @floatCast(f64, varg);
                 switch (fpcount) {
                     1 => asm volatile (""
                         :
@@ -310,7 +310,7 @@ pub fn callVarArgs(comptime T: type, func: *const fn () callconv(.C) void, args:
     asm volatile ("call *(%%r10)"
         :
         : [func] "{r10}" (func),
-          [fpcount] "{rax}" (@as(usize, fpcount))
+          [fpcount] "{rax}" (fpcount)
     );
 
     // realign stack
