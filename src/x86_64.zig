@@ -161,14 +161,14 @@ pub const VAList = struct {
                 }
             },
             .Float => {
-                var ret: T = undefined;
+                var ret: f64 = undefined;
                 if (self.fp_offset < self.fp_regs.len) {
                     ret = self.fp_regs[self.fp_offset];
                 } else {
                     @panic("TODO: stack floats");
                 }
                 self.fp_offset += 1;
-                return ret;
+                return @floatCast(T, ret);
             },
             .Struct => @compileError("Todo"),
 
