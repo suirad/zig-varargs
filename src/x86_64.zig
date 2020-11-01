@@ -8,6 +8,8 @@ const VA_Errors = error{
     NoMoreArgs,
 };
 
+pub const VAFunc = *const opaque {};
+
 pub const VAList = struct {
     first_arg: bool = true,
     count: ?usize = null,
@@ -182,7 +184,7 @@ pub const VAList = struct {
 // might be able to do comptime checks on comptime known fns
 // AND still be able to take runtime fn pointers
 
-pub fn callVarArgs(comptime T: type, func: *const fn () callconv(.C) void, args: anytype) T {
+pub fn callVarArgs(comptime T: type, func: VAFunc, args: anytype) T {
     // comptime: validate args
     comptime {
         if (@bitSizeOf(T) > @bitSizeOf(usize)) {
@@ -198,18 +200,19 @@ pub fn callVarArgs(comptime T: type, func: *const fn () callconv(.C) void, args:
     }
 
     // comptime: accounting (count fp args and calc stack size)
-    comptime var fpcount: usize = 0; // num floating point args
-    comptime var stack_growth: usize = 0;
     comptime var gp_args = 0;
+    comptime var fp_args = 0;
 
-    // push extra args onto stack and assing registers
-    inline for (args) |varg, i| {
-        const arg_info = @typeInfo(@TypeOf(varg));
+    // count number of fp and gp args so we can push them on the stack
+    //      if needed and in reverse order
+    // also do type checking
+    inline for (args) |arg| {
+        const arg_info = @typeInfo(@TypeOf(arg));
         switch (arg_info) {
             .Int, .ComptimeInt, .Optional => {
                 // type checks
-                if (@bitSizeOf(@TypeOf(varg)) > @bitSizeOf(usize)) {
-                    @compileError("Arg type is larger than usize: " ++ @typeName(@TypeOf(varg)));
+                if (@bitSizeOf(@TypeOf(arg)) > @bitSizeOf(usize)) {
+                    @compileError("Arg type is larger than usize: " ++ @typeName(@TypeOf(arg)));
                 } else if (arg_info == .Optional) {
                     const child = arg_info.Optional.child;
                     const child_info = @typeInfo(child);
@@ -217,14 +220,36 @@ pub fn callVarArgs(comptime T: type, func: *const fn () callconv(.C) void, args:
                         @compileError("Optional args should only be pointers");
                     }
                 }
+                gp_args += 1;
+            },
 
+            .Float => fp_args += 1,
+
+            .Pointer => @compileError("Pointer args need to be optional"),
+
+            else => @compileError("Unsupported arg type: " ++ @typeName(arg)),
+        }
+    }
+
+    const fp_total: usize = fp_args;
+    const gp_total = gp_args;
+    comptime var stack_growth: usize = 0;
+
+    // push extra args onto stack and assigning registers
+    comptime var index = args.len;
+
+    //inline for (args) |varg, i| {
+
+    inline while (index > 0) : (index -= 1) {
+        const varg = args[index - 1];
+        const arg_info = @typeInfo(@TypeOf(varg));
+        switch (arg_info) {
+            .Int, .ComptimeInt, .Optional => {
                 // make args register sized and make pointers ints
                 const arg: usize = if (arg_info == .Optional)
                     @as(usize, @ptrToInt(varg))
                 else
                     @as(usize, varg);
-
-                gp_args += 1;
 
                 switch (gp_args) {
                     1 => asm volatile (""
@@ -259,12 +284,12 @@ pub fn callVarArgs(comptime T: type, func: *const fn () callconv(.C) void, args:
                         );
                     },
                 }
+                gp_args -= 1;
             },
 
             .Float => {
-                fpcount += 1;
                 const arg = @floatCast(f64, varg);
-                switch (fpcount) {
+                switch (fp_args) {
                     1 => asm volatile (""
                         :
                         : [arg] "{xmm0}" (arg)
@@ -299,9 +324,9 @@ pub fn callVarArgs(comptime T: type, func: *const fn () callconv(.C) void, args:
                     ),
                     else => @panic("TODO: stack floats"),
                 }
+                fp_args -= 1;
             },
 
-            .Pointer => @compileError("Pointer args need to be optional"),
             else => @compileError("Unsupported arg type: " ++ @typeName(arg)),
         }
     }
@@ -310,7 +335,7 @@ pub fn callVarArgs(comptime T: type, func: *const fn () callconv(.C) void, args:
     asm volatile ("call *(%%r10)"
         :
         : [func] "{r10}" (func),
-          [fpcount] "{rax}" (fpcount)
+          [fp_total] "{rax}" (fp_total)
     );
 
     // realign stack

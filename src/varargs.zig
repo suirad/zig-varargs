@@ -12,11 +12,12 @@ else
 pub const VA_Errors = arch.VA_Errors;
 pub const VAList = arch.VAList;
 pub const callVarArgs = arch.callVarArgs;
+pub const VAFunc = arch.VAFunc;
 
 test "valist integers" {
-    const testfn = @ptrCast(*const fn () callconv(.C) void, &intTest);
+    const testfn = @ptrCast(VAFunc, &intTest);
     var ret = callVarArgs(usize, testfn, .{
-        @as(u64, 7), // count
+        @as(u64, 8), // count
         @as(u16, 2), // arg1
         @as(u24, 2), // arg2
         @as(u32, 2), // arg3
@@ -24,9 +25,10 @@ test "valist integers" {
         @as(u64, 2), // arg5
         @as(u64, 2), // arg6 -- is on the stack
         @as(u64, 2), // arg7 -- is on the stack
+        @as(u64, 2), // arg8 -- is on the stack
     });
 
-    assert(ret == 14);
+    assert(ret == 16);
 }
 
 fn intTest() callconv(.C) usize {
@@ -49,9 +51,9 @@ fn intTest() callconv(.C) usize {
 }
 
 test "valist floats" {
-    const testfn = @ptrCast(*const fn () callconv(.C) void, &floatTest);
+    const testfn = @ptrCast(VAFunc, &floatTest);
     const ret = callVarArgs(usize, testfn, .{
-        @as(u64, 7), // count
+        @as(u64, 8), // count
         @as(f64, 2), // arg1
         @as(f32, 2), // arg2
         @as(f64, 2), // arg3
@@ -59,9 +61,10 @@ test "valist floats" {
         @as(f64, 2), // arg5
         @as(f32, 2), // arg6
         @as(f64, 2), // arg7
+        @as(f64, 2), // arg8
     });
 
-    assert(ret == 14);
+    assert(ret == 16);
 }
 
 fn floatTest() callconv(.C) usize {
