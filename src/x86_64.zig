@@ -23,6 +23,8 @@ pub const VAList = struct {
 
     /// This needs to be done first thing by the function that uses it
     pub inline fn init() Self {
+        if (builtin.link_libc and builtin.mode == .Debug)
+            @compileError("Cannot use this build mode for var args");
         // Get all gen purpose registers one at a time because initializing
         //   any var(even set as undefined) would cause register mutation.
         // You can see this by adding any var above these and seeing rdi+ changing
@@ -184,7 +186,7 @@ pub const VAList = struct {
 // might be able to do comptime checks on comptime known fns
 // AND still be able to take runtime fn pointers
 
-pub fn callVarArgs(comptime T: type, func: VAFunc, args: anytype) T {
+pub inline fn callVarArgs(comptime T: type, func: VAFunc, args: anytype) T {
     // comptime: validate args
     comptime {
         if (@bitSizeOf(T) > @bitSizeOf(usize)) {
@@ -199,131 +201,64 @@ pub fn callVarArgs(comptime T: type, func: VAFunc, args: anytype) T {
         }
     }
 
-    // comptime: accounting (count fp args and calc stack size)
-    comptime var gp_args = 0;
-    comptime var fp_args = 0;
-
+    // comptime: accounting
     // count number of fp and gp args so we can push them on the stack
     //      if needed and in reverse order
     // also do type checking
-    inline for (args) |arg| {
-        const arg_info = @typeInfo(@TypeOf(arg));
-        switch (arg_info) {
-            .Int, .ComptimeInt, .Optional => {
-                // type checks
-                if (@bitSizeOf(@TypeOf(arg)) > @bitSizeOf(usize)) {
-                    @compileError("Arg type is larger than usize: " ++ @typeName(@TypeOf(arg)));
-                } else if (arg_info == .Optional) {
-                    const child = arg_info.Optional.child;
-                    const child_info = @typeInfo(child);
-                    if (child_info != .Pointer) {
-                        @compileError("Optional args should only be pointers");
+    comptime var gp_args = 0;
+    comptime var fp_args = 0;
+
+    comptime {
+        var index = args.len;
+        while (index > 0) : (index -= 1) {
+            const arg_type = @TypeOf(args[index - 1]);
+            const arg_info = @typeInfo(arg_type);
+            switch (arg_info) {
+                .Int, .ComptimeInt, .Optional, .Pointer => {
+                    if (@bitSizeOf(arg_type) > @bitSizeOf(usize)) {
+                        @compileError("Arg type is larger than usize: " ++ @typeName(arg_type));
+                    } else if (arg_info == .Optional) {
+                        const child = arg_info.Optional.child;
+                        const child_info = @typeInfo(child);
+                        if (child_info != .Pointer) {
+                            @compileError("Optional args should only be pointers");
+                        }
                     }
-                }
-                gp_args += 1;
-            },
 
-            .Float => fp_args += 1,
+                    gp_args += 1;
+                },
 
-            .Pointer => @compileError("Pointer args need to be optional"),
+                .Float => fp_args += 1,
 
-            else => @compileError("Unsupported arg type: " ++ @typeName(arg)),
+                else => @compileError("Unsupported arg type: " ++ @typeName(arg_type)),
+            }
         }
     }
 
     const fp_total: usize = fp_args;
-    const gp_total = gp_args;
     comptime var stack_growth: usize = 0;
-
-    // push extra args onto stack and assigning registers
     comptime var index = args.len;
 
-    //inline for (args) |varg, i| {
-
+    // reverse loop of args so you can push later args onto the stack in order
     inline while (index > 0) : (index -= 1) {
         const varg = args[index - 1];
         const arg_info = @typeInfo(@TypeOf(varg));
         switch (arg_info) {
-            .Int, .ComptimeInt, .Optional => {
-                // make args register sized and make pointers ints
-                const arg: usize = if (arg_info == .Optional)
+            .Int, .ComptimeInt, .Optional, .Pointer => {
+                const arg: usize = if (arg_info == .Optional or arg_info == .Pointer)
                     @as(usize, @ptrToInt(varg))
                 else
                     @as(usize, varg);
 
-                switch (gp_args) {
-                    1 => asm volatile (""
-                        :
-                        : [arg] "{rdi}" (arg)
-                    ),
-                    2 => asm volatile (""
-                        :
-                        : [arg] "{rsi}" (arg)
-                    ),
-                    3 => asm volatile (""
-                        :
-                        : [arg] "{rdx}" (arg)
-                    ),
-                    4 => asm volatile (""
-                        :
-                        : [arg] "{rcx}" (arg)
-                    ),
-                    5 => asm volatile (""
-                        :
-                        : [arg] "{r8}" (arg)
-                    ),
-                    6 => asm volatile (""
-                        :
-                        : [arg] "{r9}" (arg)
-                    ),
-                    else => {
-                        stack_growth += @sizeOf(usize);
-                        asm volatile ("push %%r10"
-                            :
-                            : [arg] "{r10}" (arg)
-                        );
-                    },
-                }
+                pushInt(gp_args, arg);
+                if (gp_args > 6)
+                    stack_growth += @sizeOf(usize);
                 gp_args -= 1;
             },
 
             .Float => {
                 const arg = @floatCast(f64, varg);
-                switch (fp_args) {
-                    1 => asm volatile (""
-                        :
-                        : [arg] "{xmm0}" (arg)
-                    ),
-                    2 => asm volatile (""
-                        :
-                        : [arg] "{xmm1}" (arg)
-                    ),
-                    3 => asm volatile (""
-                        :
-                        : [arg] "{xmm2}" (arg)
-                    ),
-                    4 => asm volatile (""
-                        :
-                        : [arg] "{xmm3}" (arg)
-                    ),
-                    5 => asm volatile (""
-                        :
-                        : [arg] "{xmm4}" (arg)
-                    ),
-                    6 => asm volatile (""
-                        :
-                        : [arg] "{xmm5}" (arg)
-                    ),
-                    7 => asm volatile (""
-                        :
-                        : [arg] "{xmm6}" (arg)
-                    ),
-                    8 => asm volatile (""
-                        :
-                        : [arg] "{xmm7}" (arg)
-                    ),
-                    else => @panic("TODO: stack floats"),
-                }
+                pushFloat(fp_args, arg);
                 fp_args -= 1;
             },
 
@@ -354,5 +289,79 @@ pub fn callVarArgs(comptime T: type, func: VAFunc, args: anytype) T {
     const ret = asm volatile (""
         : [ret] "={rax}" (-> T)
     );
+
     return ret;
+}
+
+inline fn pushInt(comptime index: usize, arg: usize) void {
+    switch (index) {
+        1 => asm volatile (""
+            :
+            : [arg] "{rdi}" (arg)
+        ),
+        2 => asm volatile (""
+            :
+            : [arg] "{rsi}" (arg)
+        ),
+        3 => asm volatile (""
+            :
+            : [arg] "{rdx}" (arg)
+        ),
+        4 => asm volatile (""
+            :
+            : [arg] "{rcx}" (arg)
+        ),
+        5 => asm volatile (""
+            :
+            : [arg] "{r8}" (arg)
+        ),
+        6 => asm volatile (""
+            :
+            : [arg] "{r9}" (arg)
+        ),
+        else => {
+            asm volatile ("push %%r10"
+                :
+                : [arg] "{r10}" (arg)
+            );
+        },
+    }
+}
+
+inline fn pushFloat(comptime index: usize, arg: f64) void {
+    switch (index) {
+        1 => asm volatile (""
+            :
+            : [arg] "{xmm0}" (arg)
+        ),
+        2 => asm volatile (""
+            :
+            : [arg] "{xmm1}" (arg)
+        ),
+        3 => asm volatile (""
+            :
+            : [arg] "{xmm2}" (arg)
+        ),
+        4 => asm volatile (""
+            :
+            : [arg] "{xmm3}" (arg)
+        ),
+        5 => asm volatile (""
+            :
+            : [arg] "{xmm4}" (arg)
+        ),
+        6 => asm volatile (""
+            :
+            : [arg] "{xmm5}" (arg)
+        ),
+        7 => asm volatile (""
+            :
+            : [arg] "{xmm6}" (arg)
+        ),
+        8 => asm volatile (""
+            :
+            : [arg] "{xmm7}" (arg)
+        ),
+        else => @panic("TODO: stack floats"),
+    }
 }

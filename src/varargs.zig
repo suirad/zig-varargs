@@ -17,21 +17,20 @@ pub const VAFunc = arch.VAFunc;
 test "valist integers" {
     const testfn = @ptrCast(VAFunc, &intTest);
     var ret = callVarArgs(usize, testfn, .{
-        @as(u64, 8), // count
-        @as(u16, 2), // arg1
-        @as(u24, 2), // arg2
-        @as(u32, 2), // arg3
-        @as(u16, 2), // arg4
+        @as(u64, 7), // count
+        @as(u24, 2), // arg1
+        @as(u16, 2), // arg2
+        @as(u8, 2), // arg3
+        @as(u64, 2), // arg4
         @as(u64, 2), // arg5
         @as(u64, 2), // arg6 -- is on the stack
         @as(u64, 2), // arg7 -- is on the stack
-        @as(u64, 2), // arg8 -- is on the stack
     });
 
-    assert(ret == 16);
+    assert(ret == 14);
 }
 
-fn intTest() callconv(.C) usize {
+export fn intTest() callconv(.C) usize {
     var valist = VAList.init();
     const count = valist.next(u64) catch unreachable; // first arg is guaranteed
 
@@ -85,4 +84,60 @@ fn floatTest() callconv(.C) usize {
     }
 
     return @floatToInt(usize, ret);
+}
+
+test "valist pointers" {
+    if (true)
+        return;
+    const testfn = @ptrCast(VAFunc, &optionalPointerTest);
+    var val: u64 = 2;
+    var ret = callVarArgs(usize, testfn, .{
+        @as(u64, 2), // count
+        &val,
+        &val,
+        &val,
+        &val,
+        &val,
+        &val,
+        &val,
+        &val,
+    });
+
+    assert(ret == 16);
+}
+
+fn optionalPointerTest() callconv(.C) usize {
+    var valist = VAList.init();
+    const count = valist.next(u64) catch unreachable; // first arg is guaranteed
+
+    valist.count = count;
+
+    var ret: usize = 0;
+    while (valist.next(?*u64)) |num| {
+        ret += num.?.*;
+    } else |e| {
+        switch (e) {
+            error.NoMoreArgs => {},
+            error.CountUninitialized => unreachable,
+        }
+    }
+
+    return ret;
+}
+
+const libc = @cImport(@cInclude("stdio.h"));
+test "call libc snprintf" {
+    if (!builtin.link_libc)
+        return;
+
+    const snprintf = @ptrCast(VAFunc, &libc.snprintf);
+
+    const in = "Test: %d";
+    var out = [_:0]u8{0} ** (in.len);
+
+    _ = callVarArgs(c_int, snprintf, .{ &out, out.len + 1, in, 69 });
+
+    const expected = "Test: 69";
+    assert(std.mem.eql(u8, out[0..], expected));
+    print("out: {} | len: {}\nexp: {} | len: {}", .{ out, out.len, expected, expected.len });
 }
