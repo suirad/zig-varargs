@@ -23,31 +23,31 @@ pub const VAList = struct {
 
     /// This needs to be done first thing by the function that uses it
     pub inline fn init() Self {
-        if (builtin.link_libc and builtin.mode == .Debug)
-            @compileError("Cannot use this build mode for var args");
+        //if (builtin.link_libc and builtin.mode == .Debug)
+        //@compileError("Cannot use this build mode for var args");
         // Get all gen purpose registers one at a time because initializing
         //   any var(even set as undefined) would cause register mutation.
         // You can see this by adding any var above these and seeing rdi+ changing
         const fp_count: usize = asm volatile (""
-            : [ret] "={rax}" (-> usize)
+            : [ret] "={rax}" (-> usize),
         );
         const rdi = asm volatile (""
-            : [ret] "={rdi}" (-> usize)
+            : [ret] "={rdi}" (-> usize),
         );
         const rsi = asm volatile (""
-            : [ret] "={rsi}" (-> usize)
+            : [ret] "={rsi}" (-> usize),
         );
         const rdx = asm volatile (""
-            : [ret] "={rdx}" (-> usize)
+            : [ret] "={rdx}" (-> usize),
         );
         const rcx = asm volatile (""
-            : [ret] "={rcx}" (-> usize)
+            : [ret] "={rcx}" (-> usize),
         );
         const r8 = asm volatile (""
-            : [ret] "={r8}" (-> usize)
+            : [ret] "={r8}" (-> usize),
         );
         const r9 = asm volatile (""
-            : [ret] "={r9}" (-> usize)
+            : [ret] "={r9}" (-> usize),
         );
 
         var self = VAList{};
@@ -60,28 +60,28 @@ pub const VAList = struct {
         // save fp registers if fp_count != 0
         if (fp_count != 0) {
             self.fp_regs[0] = asm volatile (""
-                : [ret] "={xmm0}" (-> f64)
+                : [ret] "={xmm0}" (-> f64),
             );
             self.fp_regs[1] = asm volatile (""
-                : [ret] "={xmm1}" (-> f64)
+                : [ret] "={xmm1}" (-> f64),
             );
             self.fp_regs[2] = asm volatile (""
-                : [ret] "={xmm2}" (-> f64)
+                : [ret] "={xmm2}" (-> f64),
             );
             self.fp_regs[3] = asm volatile (""
-                : [ret] "={xmm3}" (-> f64)
+                : [ret] "={xmm3}" (-> f64),
             );
             self.fp_regs[4] = asm volatile (""
-                : [ret] "={xmm4}" (-> f64)
+                : [ret] "={xmm4}" (-> f64),
             );
             self.fp_regs[5] = asm volatile (""
-                : [ret] "={xmm5}" (-> f64)
+                : [ret] "={xmm5}" (-> f64),
             );
             self.fp_regs[6] = asm volatile (""
-                : [ret] "={xmm6}" (-> f64)
+                : [ret] "={xmm6}" (-> f64),
             );
             self.fp_regs[7] = asm volatile (""
-                : [ret] "={xmm7}" (-> f64)
+                : [ret] "={xmm7}" (-> f64),
             );
         }
 
@@ -262,7 +262,7 @@ pub inline fn callVarArgs(comptime T: type, func: VAFunc, args: anytype) T {
                 fp_args -= 1;
             },
 
-            else => @compileError("Unsupported arg type: " ++ @typeName(arg)),
+            else => @compileError("Unsupported arg type: " ++ @typeName(varg)),
         }
     }
 
@@ -270,14 +270,14 @@ pub inline fn callVarArgs(comptime T: type, func: VAFunc, args: anytype) T {
     asm volatile ("call *(%%r10)"
         :
         : [func] "{r10}" (func),
-          [fp_total] "{rax}" (fp_total)
+          [fp_total] "{rax}" (fp_total),
     );
 
     // realign stack
     if (stack_growth > 0) {
         asm volatile ("add %%r10, %%rsp"
             :
-            : [stack_growth] "{r10}" (stack_growth)
+            : [stack_growth] "{r10}" (stack_growth),
         );
     }
 
@@ -287,7 +287,7 @@ pub inline fn callVarArgs(comptime T: type, func: VAFunc, args: anytype) T {
     }
 
     const ret = asm volatile (""
-        : [ret] "={rax}" (-> T)
+        : [ret] "={rax}" (-> T),
     );
 
     return ret;
@@ -297,32 +297,32 @@ inline fn pushInt(comptime index: usize, arg: usize) void {
     switch (index) {
         1 => asm volatile (""
             :
-            : [arg] "{rdi}" (arg)
+            : [arg] "{rdi}" (arg),
         ),
         2 => asm volatile (""
             :
-            : [arg] "{rsi}" (arg)
+            : [arg] "{rsi}" (arg),
         ),
         3 => asm volatile (""
             :
-            : [arg] "{rdx}" (arg)
+            : [arg] "{rdx}" (arg),
         ),
         4 => asm volatile (""
             :
-            : [arg] "{rcx}" (arg)
+            : [arg] "{rcx}" (arg),
         ),
         5 => asm volatile (""
             :
-            : [arg] "{r8}" (arg)
+            : [arg] "{r8}" (arg),
         ),
         6 => asm volatile (""
             :
-            : [arg] "{r9}" (arg)
+            : [arg] "{r9}" (arg),
         ),
         else => {
             asm volatile ("push %%r10"
                 :
-                : [arg] "{r10}" (arg)
+                : [arg] "{r10}" (arg),
             );
         },
     }
@@ -332,35 +332,35 @@ inline fn pushFloat(comptime index: usize, arg: f64) void {
     switch (index) {
         1 => asm volatile (""
             :
-            : [arg] "{xmm0}" (arg)
+            : [arg] "{xmm0}" (arg),
         ),
         2 => asm volatile (""
             :
-            : [arg] "{xmm1}" (arg)
+            : [arg] "{xmm1}" (arg),
         ),
         3 => asm volatile (""
             :
-            : [arg] "{xmm2}" (arg)
+            : [arg] "{xmm2}" (arg),
         ),
         4 => asm volatile (""
             :
-            : [arg] "{xmm3}" (arg)
+            : [arg] "{xmm3}" (arg),
         ),
         5 => asm volatile (""
             :
-            : [arg] "{xmm4}" (arg)
+            : [arg] "{xmm4}" (arg),
         ),
         6 => asm volatile (""
             :
-            : [arg] "{xmm5}" (arg)
+            : [arg] "{xmm5}" (arg),
         ),
         7 => asm volatile (""
             :
-            : [arg] "{xmm6}" (arg)
+            : [arg] "{xmm6}" (arg),
         ),
         8 => asm volatile (""
             :
-            : [arg] "{xmm7}" (arg)
+            : [arg] "{xmm7}" (arg),
         ),
         else => @panic("TODO: stack floats"),
     }
